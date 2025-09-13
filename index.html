@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Stickman Shooter 2</title>
+  <style>
+    body { margin:0; background:#111; color:#eee; display:flex; flex-direction:column; align-items:center; }
+    canvas { background:#222; margin-top:12px; border:2px solid #444; border-radius:8px; }
+    .info { margin-top:8px; font-family:sans-serif; font-size:14px; }
+  </style>
+</head>
+<body>
+  <h2>Stickman Shooter 2</h2>
+  <canvas id="game" width="800" height="500"></canvas>
+  <div class="info">Controls: WASD = move, Mouse = aim & shoot, Space = dash, Shift = sprint, R = reload</div>
+  <script>
+    const c = document.getElementById("game");
+    const ctx = c.getContext("2d");
+    let W=c.width, H=c.height;
+
+    // Player
+    const player = { x:W/2, y:H/2, r:15, speed:160, sprint:240, hp:100, ammo:10, maxAmmo:10, reloading:false, dashCooldown:0 };
+    const bullets = [];
+    const enemies = [];
+    let keys={}, mouse={x:W/2,y:H/2,down:false};
+
+    function drawStickman(x,y,angle){
+      ctx.save();
+      ctx.translate(x,y);
+      ctx.rotate(angle);
+      ctx.strokeStyle="cyan"; ctx.lineWidth=3;
+      // head
+      ctx.beginPath(); ctx.arc(0,-player.r,player.r*0.6,0,Math.PI*2); ctx.stroke();
+      // body
+      ctx.beginPath(); ctx.moveTo(0,-player.r*0.4); ctx.lineTo(0,player.r); ctx.stroke();
+      // arms
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-player.r,player.r*0.6); ctx.moveTo(0,0); ctx.lineTo(player.r,player.r*0.6); ctx.stroke();
+      // legs
+      ctx.beginPath(); ctx.moveTo(0,player.r); ctx.lineTo(-player.r*0.7,player.r*2); ctx.moveTo(0,player.r); ctx.lineTo(player.r*0.7,player.r*2); ctx.stroke();
+      ctx.restore();
+    }
+
+    function spawnEnemy(){
+      const side = Math.random()<0.5? 0:1;
+      const ex = side? Math.random()*W : (Math.random()<0.5? -30: W+30);
+      const ey = side? (Math.random()<0.5? -30: H+30) : Math.random()*H;
+      enemies.push({x:ex,y:ey,r:14,hp:40});
+    }
+
+    function shoot(){
+      if(player.ammo<=0||player.reloading) return;
+      const ang=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+      bullets.push({x:player.x,y:player.y,vx:Math.cos(ang)*400,vy:Math.sin(ang)*400,r:4});
+      player.ammo--;
+    }
+
+    // Events
+    window.addEventListener("keydown",e=>{keys[e.key.toLowerCase()]=true; if(e.key===" ") e.preventDefault();});
+    window.addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false;});
+    c.addEventListener("mousemove",e=>{const r=c.getBoundingClientRect(); mouse.x=e.clientX-r.left; mouse.y=e.clientY-r.top;});
+    c.addEventListener("mousedown",()=>mouse.down=true);
+    c.addEventListener("mouseup",()=>mouse.down=false);
+
+    // Loop
+    let last=performance.now();
+    function loop(t){
+      const dt=(t-last)/1000; last=t;
+      ctx.clearRect(0,0,W,H);
+
+      // Move
+      let dx=0,dy=0;
+      if(keys['w']) dy--;
+      if(keys['s']) dy++;
+      if(keys['a']) dx--;
+      if(keys['d']) dx++;
+      if(dx||dy){ const l=Math.hypot(dx,dy); dx/=l; dy/=l; }
+      let sp=player.speed; if(keys['shift']) sp=player.sprint;
+      player.x+=dx*sp*dt; player.y+=dy*sp*dt;
+
+      // Dash
+      if(keys[' ']&&player.dashCooldown<=0){
+        const ang=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+        player.x+=Math.cos(ang)*80;
+        player.y+=Math.sin(ang)*80;
+        player.dashCooldown=1.5;
+      }
+      player.dashCooldown-=dt;
+
+      // Reload
+      if(keys['r']&&!player.reloading){ player.reloading=true; setTimeout(()=>{player.ammo=player.maxAmmo; player.reloading=false;},1000); }
+
+      // Shooting
+      if(mouse.down){ shoot(); }
+
+      // Bullets
+      for(let i=bullets.length-1;i>=0;i--){
+        const b=bullets[i]; b.x+=b.vx*dt; b.y+=b.vy*dt;
+        ctx.beginPath(); ctx.fillStyle="yellow"; ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
+        if(b.x<0||b.y<0||b.x>W||b.y>H) bullets.splice(i,1);
+      }
+
+      // Enemies
+      for(let i=enemies.length-1;i>=0;i--){
+        const e=enemies[i];
+        const ang=Math.atan2(player.y-e.y,player.x-e.x);
+        e.x+=Math.cos(ang)*70*dt; e.y+=Math.sin(ang)*70*dt;
+        ctx.beginPath(); ctx.fillStyle="red"; ctx.arc(e.x,e.y,e.r,0,Math.PI*2); ctx.fill();
+        // hit
+        for(let j=bullets.length-1;j>=0;j--){ const b=bullets[j]; const dx=b.x-e.x,dy=b.y-e.y;if(dx*dx+dy*dy<(b.r+e.r)*(b.r+e.r)){e.hp-=20;bullets.splice(j,1);} }
+        if(e.hp<=0) enemies.splice(i,1);
+      }
+
+      // Spawn
+      if(Math.random()<0.01) spawnEnemy();
+
+      // Draw player
+      const angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+      drawStickman(player.x,player.y,angle);
+
+      // UI
+      ctx.fillStyle="white"; ctx.font="14px sans-serif";
+      ctx.fillText(`HP: ${player.hp}`,10,20);
+      ctx.fillText(player.reloading?"Reloading...":`Ammo: ${player.ammo}/${player.maxAmmo}`,10,40);
+
+      requestAnimationFrame(loop);
+    }
+    loop(last);
+  </script>
+</body>
+</html>
